@@ -7,6 +7,7 @@ import pandas as pd
 import geopandas as gpd
 from pandas.core.api import Int32Dtype
 import fiona
+import requests
 from typing import List
 
 #%%
@@ -88,6 +89,25 @@ def join_gemeente_with_provincie(gdf_gemeente_gegeneraliseerd: gpd.GeoDataFrame,
         crs=gdf_gemeente_gegeneraliseerd.crs
     )
     return panel_result
+
+
+def read_aardbevingen_data(starttime: str = "1995-01-01", endtime: str = "2025-12-31") -> pd.DataFrame:
+    """Reads aardbevingen data from the KNMI deprecated API"""
+    
+    url = "https://rdsa.knmi.nl/fdsnws/event/1/query"
+    params = {
+        "format": "json",
+        "starttime": starttime,
+        "endtime": endtime,
+    }
+
+    data = requests.get(url, params=params).json()
+
+    df = pd.json_normalize(data["features"])
+
+    return df
+
+# %%
 
 # %%
 gdf_gemeenten = concatenate_cbs_gebieden(list(range(1995, 2026)), "gemeente_gegeneraliseerd")
