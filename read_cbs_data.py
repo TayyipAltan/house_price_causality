@@ -9,6 +9,9 @@ from pandas.core.api import Int32Dtype
 import fiona
 import requests
 from typing import List
+import matplotlib.pyplot as plt
+import contextily as ctx
+import numpy as np
 
 #%%
 def read_prijsindex_data() -> pd.DataFrame:
@@ -25,10 +28,11 @@ def read_prijsindex_data() -> pd.DataFrame:
     
     df['Jaar'] = df['Periode'].str.split(" ").str[0]
     df['Kwartaal'] = df['Periode'].str.split(" ").str[1].str[0]
+    df = df[df['Kwartaal'] == '4']
 
-    return df.drop('Periode', axis=1)
+    return df.drop(['Periode', 'Kwartaal'], axis=1)
 
-# %%
+
 def read_cbs_gebieden_per_jaar(year: int, layer: str) -> gpd.GeoDataFrame:
     """
     Read CBS gebiedsindeling data for a given year
@@ -37,6 +41,7 @@ def read_cbs_gebieden_per_jaar(year: int, layer: str) -> gpd.GeoDataFrame:
     gdf = gpd.read_file(f'./data/cbsgebiedsindelingen{year}.gpkg', layer = layer)
     gdf['jaar'] = year
     return gdf
+
 
 def concatenate_cbs_gebieden(years: List[int], layer: str) -> gpd.GeoDataFrame:
     """
@@ -57,6 +62,7 @@ def concatenate_cbs_gebieden(years: List[int], layer: str) -> gpd.GeoDataFrame:
     
     return gpd.GeoDataFrame(pd.concat(gdfs, ignore_index=True), crs=gdfs[0].crs)
 
+
 def join_gemeente_with_provincie(gdf_gemeente_gegeneraliseerd: gpd.GeoDataFrame, gdf_provincie_gegeneraliseerd: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     """
     Join the gemeente_gegeneraliseerd with the provincie_gegeneraliseerd
@@ -66,8 +72,7 @@ def join_gemeente_with_provincie(gdf_gemeente_gegeneraliseerd: gpd.GeoDataFrame,
     gdf_gemeente_gegeneraliseerd['geometry'] = gdf_gemeente_gegeneraliseerd.geometry.buffer(0)
     gdf_provincie_gegeneraliseerd['geometry'] = gdf_provincie_gegeneraliseerd.geometry.buffer(0)
     
-    
-    # Panel data does not work with sjoin, so we need to join year by year
+    # Panel data does not work well with sjoin, so we need to join year by year
     results = []
     
     for year, gemeente_year in gdf_gemeente_gegeneraliseerd.groupby("jaar"):
@@ -107,19 +112,39 @@ def read_aardbevingen_data(starttime: str = "1995-01-01", endtime: str = "2025-1
 
     return df
 
-# %%
 
-# %%
-gdf_gemeenten = concatenate_cbs_gebieden(list(range(1995, 2026)), "gemeente_gegeneraliseerd")
-gdf_provincies = concatenate_cbs_gebieden(list(range(1995, 2026)), "provincie_gegeneraliseerd")
+def transform_aardbevingen_data(df_aardbevingen: pd.DataFrame) -> gpd.GeoDataFrame:
+    """Transform the aardbevingen data to a geopandas dataframe"""
+    
+    gdf = gpd.GeoDataFrame(
+        df_aardbevingen,
+        geometry = gpd.points_from_xy(df_aardbevingen['properties.lon'], df_aardbevingen['properties.lat']),
+        crs = "EPSG:4326"
+    )
 
-# %%
-gdf_provincies[gdf_provincies['jaar'] == 1995]
+    gdf = gdf[gdf['properties.status'] != 'preliminary']
+
+    return gdf.drop(['type', 'id', 'properties.lat', 'properties.lon', 'properties.catalog', 
+                     'properties.contributor', 'properties.mode', 'geometry.coordinates', 
+                     'geometry.type', 'properties.status'], axis=1)
+
+
+def main():
+    
+    gdf_gemeenten = concatenate_cbs_gebieden(list(range(1995, 2026)), "gemeente_gegeneraliseerd")
+    gdf_provincies = concatenate_cbs_gebieden(list(range(1995, 2026)), "provincie_gegeneraliseerd")
+
+    gdf_joined = join_gemeente_with_provincie(gdf_gemeenten, gdf_provincies)
+    
+    df_aardbevingen = read_aardbevingen_data()
+    gdf_aard = transform_aardbevingen_data(df_aardbevingen)
+    
+    # Need to create a function to join the aardbevingen with the gdf_joined
+    # Still need to think about the best way to do this
+
+    return gdf_joined
 
 #%%
-gdf_joined = join_gemeente_with_provincie(gdf_gemeenten, gdf_provincies)
-gdf_joined.head()
+df = read_prijsindex_data()
 #%%
-gdf_joined.shape[0] == gdf_gemeenten.shape[0]
-
-# %%
+df.info()
