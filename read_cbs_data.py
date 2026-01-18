@@ -13,6 +13,10 @@ import matplotlib.pyplot as plt
 import contextily as ctx
 import numpy as np
 
+import os
+
+CONFOUNDER_FOLDER_PATH = "./data/confounders/"
+
 #%%
 def read_prijsindex_data() -> pd.DataFrame:
     """Reads CBS prijsindex data and adjust the column names"""
@@ -24,9 +28,9 @@ def read_prijsindex_data() -> pd.DataFrame:
     
     df = df.iloc[2:, :].reset_index(drop=True)
     
-    df['Gemeentecode'] = df['Gemeentecode'].astype(int)
-    
     df['Jaar'] = df['Periode'].str.split(" ").str[0]
+    df['Jaar'] = df['Jaar'].astype(int)
+    
     df['Kwartaal'] = df['Periode'].str.split(" ").str[1].str[0]
     df = df[df['Kwartaal'] == '4']
 
@@ -93,7 +97,12 @@ def join_gemeente_with_provincie(gdf_gemeente_gegeneraliseerd: gpd.GeoDataFrame,
         pd.concat(results, ignore_index=True),
         crs=gdf_gemeente_gegeneraliseerd.crs
     )
-    return panel_result
+    
+    cols_to_drop = ['id__gemeente', 'statcode__gemeente', 'jrstatcode__gemeente', 'rubriek__gemeente', 
+                'index__provincie', 'id__provincie', 'statcode__provincie', 'jrstatcode__provincie',  
+                'rubriek__provincie', 'jaar__provincie']
+    
+    return panel_result.drop(cols_to_drop, axis=1)
 
 
 def read_aardbevingen_data(starttime: str = "1995-01-01", endtime: str = "2025-12-31") -> pd.DataFrame:
@@ -127,24 +136,35 @@ def transform_aardbevingen_data(df_aardbevingen: pd.DataFrame) -> gpd.GeoDataFra
     return gdf.drop(['type', 'id', 'properties.lat', 'properties.lon', 'properties.catalog', 
                      'properties.contributor', 'properties.mode', 'geometry.coordinates', 
                      'geometry.type', 'properties.status'], axis=1)
-
-
-def main():
     
-    gdf_gemeenten = concatenate_cbs_gebieden(list(range(1995, 2026)), "gemeente_gegeneraliseerd")
-    gdf_provincies = concatenate_cbs_gebieden(list(range(1995, 2026)), "provincie_gegeneraliseerd")
 
-    gdf_joined = join_gemeente_with_provincie(gdf_gemeenten, gdf_provincies)
+def load_confounder_data(confounder_file_path: str) -> pd.DataFrame:
+    """Create the confounder data from the confounder file"""
     
-    df_aardbevingen = read_aardbevingen_data()
-    gdf_aard = transform_aardbevingen_data(df_aardbevingen)
+    df = pd.read_csv(os.path.join(CONFOUNDER_FOLDER_PATH, confounder_file_path), sep=";")
+
+    if df['Perioden'].dtype == 'object':
+        # Keeping in preliminary data with * behind the year
+        df['Perioden'] = df['Perioden'].str.replace('*', '').astype(int)
     
-    # Need to create a function to join the aardbevingen with the gdf_joined
-    # Still need to think about the best way to do this
+    if confounder_file_path == 'Bevolking__geslacht__leeftijd__regio_18012026_150430.csv':
+        df_pivot = df.pivot_table(index=["Regio's", "Perioden"], columns='Burgerlijke staat', values='Bevolking op 1 januari (aantal)').reset_index()
+        df_pivot.index.name = None
+        return df_pivot
+    else:
+        return df
+    
+    
+def merge_confounder_data(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """
+    Merge the confounder data with the gdf
+    """
+    for file in os.listdir(CONFOUNDER_FOLDER_PATH):
+        df_confounder = load_confounder_data(file)
+        gdf = gdf.merge(df_confounder, left_on=["Regio's", 'Perioden'], 
+                        right_on=["Regio's", 'Perioden'], how='left')
+    
+    return gdf
 
-    return gdf_joined
 
-#%%
-df = read_prijsindex_data()
-#%%
-df.info()
+
