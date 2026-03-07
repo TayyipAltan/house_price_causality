@@ -15,7 +15,7 @@ import numpy as np
 
 import os
 
-CONFOUNDER_FOLDER_PATH = "./data/confounders/"
+COVARIATES_FOLDER_PATH = "./data/covariates/"
 
 #%%
 def read_prijsindex_data() -> pd.DataFrame:
@@ -32,9 +32,9 @@ def read_prijsindex_data() -> pd.DataFrame:
     df['Jaar'] = df['Jaar'].astype(int)
     
     df['Kwartaal'] = df['Periode'].str.split(" ").str[1].str[0]
-    df = df[df['Kwartaal'] == '4']
+    # df = df[df['Kwartaal'] == '4']
 
-    return df.drop(['Periode', 'Kwartaal'], axis=1)
+    return df.drop('Periode', axis=1)
 
 
 def read_cbs_gebieden_per_jaar(year: int, layer: str) -> gpd.GeoDataFrame:
@@ -84,12 +84,15 @@ def join_gemeente_with_provincie(gdf_gemeente_gegeneraliseerd: gpd.GeoDataFrame,
 
         joined = gpd.sjoin(
             gemeente_year,
-            provincie_year,
+            provincie_year.assign(geometry=provincie_year.geometry.buffer(0.001)),
             how="left",
             predicate="within",
             lsuffix="_gemeente",
             rsuffix="_provincie"
         )
+        
+        if joined['statnaam__provincie'].isna().any():
+            print(f"Warning: Some gemeenten in year {year} could not be matched to a provincie.")
 
         results.append(joined)
 
@@ -132,39 +135,11 @@ def transform_aardbevingen_data(df_aardbevingen: pd.DataFrame) -> gpd.GeoDataFra
     )
 
     gdf = gdf[gdf['properties.status'] != 'preliminary']
+    
+    gdf['timestamp'] = pd.to_datetime(gdf['properties.time'])
 
     return gdf.drop(['type', 'id', 'properties.lat', 'properties.lon', 'properties.catalog', 
                      'properties.contributor', 'properties.mode', 'geometry.coordinates', 
-                     'geometry.type', 'properties.status'], axis=1)
+                     'geometry.type', 'properties.status', ], axis=1)
     
-
-def load_confounder_data(confounder_file_path: str) -> pd.DataFrame:
-    """Create the confounder data from the confounder file"""
-    
-    df = pd.read_csv(os.path.join(CONFOUNDER_FOLDER_PATH, confounder_file_path), sep=";")
-
-    if df['Perioden'].dtype == 'object':
-        # Keeping in preliminary data with * behind the year
-        df['Perioden'] = df['Perioden'].str.replace('*', '').astype(int)
-    
-    if confounder_file_path == 'Bevolking__geslacht__leeftijd__regio_18012026_150430.csv':
-        df_pivot = df.pivot_table(index=["Regio's", "Perioden"], columns='Burgerlijke staat', values='Bevolking op 1 januari (aantal)').reset_index()
-        df_pivot.index.name = None
-        return df_pivot
-    else:
-        return df
-    
-    
-def merge_confounder_data(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """
-    Merge the confounder data with the gdf
-    """
-    for file in os.listdir(CONFOUNDER_FOLDER_PATH):
-        df_confounder = load_confounder_data(file)
-        gdf = gdf.merge(df_confounder, left_on=["Regio's", 'Perioden'], 
-                        right_on=["Regio's", 'Perioden'], how='left')
-    
-    return gdf
-
-
 
