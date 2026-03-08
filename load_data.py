@@ -2,7 +2,6 @@
 De gpkg bestanden hebben ook layers
 Voor provincies: provincie_gegeneraliseerd
 Voor gemeenten: gemeente_gegeneraliseerd"""
-#%%
 import pandas as pd
 import geopandas as gpd
 from pandas.core.api import Int32Dtype
@@ -15,9 +14,6 @@ import numpy as np
 
 import os
 
-COVARIATES_FOLDER_PATH = "./data/covariates/"
-
-#%%
 def read_prijsindex_data() -> pd.DataFrame:
     """Reads CBS prijsindex data and adjust the column names"""
     
@@ -28,13 +24,14 @@ def read_prijsindex_data() -> pd.DataFrame:
     
     df = df.iloc[2:, :].reset_index(drop=True)
     
-    df['Jaar'] = df['Periode'].str.split(" ").str[0]
-    df['Jaar'] = df['Jaar'].astype(int)
+    df['jaar'] = df['Periode'].str.split(" ").str[0]
+    df['jaar'] = df['jaar'].astype(int)
     
-    df['Kwartaal'] = df['Periode'].str.split(" ").str[1].str[0]
-    # df = df[df['Kwartaal'] == '4']
+    df['kwartaal'] = df['Periode'].str.split(" ").str[1].str[0]
+    
+    df = df.rename({'Index 2020=100': 'price_index', 'Gemeentenaam': 'gemeente'}, axis=1)
 
-    return df.drop('Periode', axis=1)
+    return df[['gemeente', 'kwartaal', 'jaar', 'price_index']]
 
 
 def read_cbs_gebieden_per_jaar(year: int, layer: str) -> gpd.GeoDataFrame:
@@ -73,8 +70,8 @@ def join_gemeente_with_provincie(gdf_gemeente_gegeneraliseerd: gpd.GeoDataFrame,
     """
     gdf_gemeente_gegeneraliseerd = gdf_gemeente_gegeneraliseerd.to_crs(gdf_provincie_gegeneraliseerd.crs)
     
-    gdf_gemeente_gegeneraliseerd['geometry'] = gdf_gemeente_gegeneraliseerd.geometry.buffer(0)
-    gdf_provincie_gegeneraliseerd['geometry'] = gdf_provincie_gegeneraliseerd.geometry.buffer(0)
+    gdf_gemeente_gegeneraliseerd['geometry'] = gdf_gemeente_gegeneraliseerd.geometry
+    gdf_provincie_gegeneraliseerd['geometry'] = gdf_provincie_gegeneraliseerd.geometry
     
     # Panel data does not work well with sjoin, so we need to join year by year
     results = []
@@ -84,7 +81,7 @@ def join_gemeente_with_provincie(gdf_gemeente_gegeneraliseerd: gpd.GeoDataFrame,
 
         joined = gpd.sjoin(
             gemeente_year,
-            provincie_year.assign(geometry=provincie_year.geometry.buffer(0.001)),
+            provincie_year.assign(geometry=provincie_year.geometry.buffer(0.001)), #buffer to avoid mismathc
             how="left",
             predicate="within",
             lsuffix="_gemeente",
@@ -99,13 +96,9 @@ def join_gemeente_with_provincie(gdf_gemeente_gegeneraliseerd: gpd.GeoDataFrame,
     panel_result = gpd.GeoDataFrame(
         pd.concat(results, ignore_index=True),
         crs=gdf_gemeente_gegeneraliseerd.crs
-    )
+    ).rename({'statnaam__gemeente': "gemeente", 'jaar__gemeente': 'jaar', 'statnaam__provincie': 'provincie'}, axis = 1)
     
-    cols_to_drop = ['id__gemeente', 'statcode__gemeente', 'jrstatcode__gemeente', 'rubriek__gemeente', 
-                'index__provincie', 'id__provincie', 'statcode__provincie', 'jrstatcode__provincie',  
-                'rubriek__provincie', 'jaar__provincie']
-    
-    return panel_result.drop(cols_to_drop, axis=1)
+    return panel_result[['gemeente', 'geometry', 'jaar', 'provincie']]
 
 
 def read_aardbevingen_data(starttime: str = "1995-01-01", endtime: str = "2025-12-31") -> pd.DataFrame:
@@ -120,10 +113,20 @@ def read_aardbevingen_data(starttime: str = "1995-01-01", endtime: str = "2025-1
 
     data = requests.get(url, params=params).json()
 
-    df = pd.json_normalize(data["features"])
+    return pd.json_normalize(data["features"])
 
-    return df
 
+def filter_aardbevingen_data(df: pd.DataFrame) -> pd.DataFrame:
+    """Filter the aardbevingen data to only include relevant events and columns"""
+    
+    df = df[df['properties.status'] != 'preliminary']
+    
+    df['timestamp'] = pd.to_datetime(df['properties.time'])
+    
+    df.rename(columns={'properties.mag': 'magnitude', 'properties.event_type': 'event_type', 'properties.depth': 'depth', 'properties.location': 'location'}, inplace=True)
+    
+    return df[~df['event_type'].isin(['explosion', 'other event'])]
+    
 
 def transform_aardbevingen_data(df_aardbevingen: pd.DataFrame) -> gpd.GeoDataFrame:
     """Transform the aardbevingen data to a geopandas dataframe"""
@@ -138,8 +141,6 @@ def transform_aardbevingen_data(df_aardbevingen: pd.DataFrame) -> gpd.GeoDataFra
     
     gdf['timestamp'] = pd.to_datetime(gdf['properties.time'])
 
-    return gdf.drop(['type', 'id', 'properties.lat', 'properties.lon', 'properties.catalog', 
-                     'properties.contributor', 'properties.mode', 'geometry.coordinates', 
-                     'geometry.type', 'properties.status', ], axis=1)
+    return gdf[['location', 'magnitude', 'depth', 'event_type', 'geometry', 'timestamp']]
     
 
