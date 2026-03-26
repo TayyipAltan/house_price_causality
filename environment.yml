@@ -1,0 +1,48 @@
+name: house-price-causality
+
+channels:
+  - conda-forge
+
+dependencies:
+  # ---------- Python ----------
+  - python=3.11
+
+  - pandas
+  - numpy
+  - openpyxl
+  - pyarrow
+
+  # geospatial
+  - geopandas
+  - pyproj
+  - fiona #layers for knmi data
+  - rtree
+  - contextily
+
+  # networking
+  - requests
+
+  # notebooks / dev
+  - jupyterlab
+  - ipykernel
+
+  # ---------- R ----------
+  - r-base
+  - r-essentials
+
+  # spatial analysis
+  - r-sf
+
+  - r-dplyr
+  - r-tidyr
+  - r-readr
+  - r-fixest # for regression analysis
+  - r-rmarkdown
+  - r-knitr
+  - r-ggplot2
+
+  # allow pip installs (for your package)
+  - pip
+
+  - pip:
+      - -e .
