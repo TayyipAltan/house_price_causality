@@ -211,5 +211,4 @@ keys.py
 *.key
 *.secret
 
-# Data files
 data/
