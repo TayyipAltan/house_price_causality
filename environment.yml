@@ -11,13 +11,14 @@ dependencies:
   - numpy
   - openpyxl
   - pyarrow
+  - pyarrow.parquet
 
   # geospatial
+  - contextily
   - geopandas
   - pyproj
   - fiona #layers for knmi data
   - rtree
-  - contextily
 
   # networking
   - requests
@@ -36,6 +37,7 @@ dependencies:
   - r-dplyr
   - r-tidyr
   - r-readr
+  - r-arrow
   - r-fixest # for regression analysis
   - r-rmarkdown
   - r-knitr
