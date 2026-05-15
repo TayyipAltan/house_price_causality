@@ -211,4 +211,4 @@ keys.py
 *.key
 *.secret
 
-data/
+data/raw/
